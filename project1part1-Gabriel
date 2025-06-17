@@ -1,0 +1,177 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jun 16 19:59:54 2025
+
+@author: User
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.stats
+from collections import Counter
+#from scipy.linalg import fractional_matrix_power
+states=['Breast tumour removed surgically','Cancer close to tumour','Metastasis','Close to tumour and metastasis','Death' ]
+
+Probmatrix=np.array([[.9915,.005,.0025,0,.001],[0,.986,.005,.004,.005],[0,0,.992,.003,.005],[0,0,0,.991,.009],[0,0,0,0,1]])
+patients=np.zeros(1000,dtype=int)
+months=1000
+reappear=[]
+alive=np.ones(months,dtype=int)
+alive=alive*1000
+lifetime=np.zeros(len(patients),dtype=int)
+dead=[]
+#alive=alive*1000
+def one_month_simulation(patients,Probmatrix,reappear, alive,lifetime):
+    for i in range (len(patients)):
+        x=patients[i]
+        patients[i]= np.random.choice(len(states), p=Probmatrix[x])
+        if patients[i]!=4:
+            lifetime[i]+=1
+    reappear.append(np.count_nonzero(patients==1))
+    dead.append((np.count_nonzero(patients==4)))
+    return(patients,reappear,lifetime)
+
+def many_months(months, reappear, alive, dead):
+    for j in range(months):
+        one_month_simulation(patients,Probmatrix,reappear,alive,lifetime)
+        alive[j]=alive[j]-dead[j]
+    #print("The fraction of women who has a cancer close to the tumour is:",sum(patients)/(months*len(patients)))    
+    return(alive,patients,lifetime)
+
+#many_months(months, reappear, alive, dead)
+
+def histplot(alive):
+    xaxis=np.arange(len(alive))
+    # Plot
+    plt.figure(figsize=(8, 5))
+    plt.bar(xaxis, alive, color='skyblue', edgecolor='black')
+
+    # Label axes and title
+    plt.xlabel("Months")
+    plt.ylabel("Patients Alive")
+    plt.title("Survival")
+
+    # Show grid (optional)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    plt.tight_layout()
+    plt.show()
+#histplot(alive)
+#####TASK 2 #####
+def task_2(Probmatrix,patients):
+    p0=np.array([1,0,0,0,0])
+    p0=p0.reshape(1,-1)
+    Probmatrix_120 = np.linalg.matrix_power(Probmatrix, 120)
+    ptheoretic=np.dot(p0, Probmatrix_120)
+    ptheoretic = np.array(ptheoretic).flatten()
+    experimental=[]
+    print("Theoretical values:",ptheoretic)
+    for i in range(len(states)):
+        experimental.append(np.count_nonzero(patients==i))
+    experimental=np.array(experimental,dtype=int)/1000
+    print("Experimental values:",experimental)
+    chi2, p_value=scipy.stats.chisquare(f_obs=experimental*1000,f_exp=ptheoretic*1000)
+    print(f"Chi-squared = {chi2:.2f}, p-value = {p_value:.4f}")
+#task_2(Probmatrix,patients)
+
+####### TASK 3 ######
+def task_3(Probmatrix,patients,lifetime):
+    tmax=months
+    theoretical=[]
+    P_s=Probmatrix[:4,:4]
+    p_s=Probmatrix[:4,4]
+    pi=np.array([1,0,0,0])
+    for t in range (tmax):
+        Pt=np.linalg.matrix_power(P_s, t)
+        p_T_t=pi @ Pt @ p_s
+        theoretical.append(p_T_t)
+    theoretical=np.array(theoretical).flatten()
+    xaxis=np.arange(0,1000)
+    fig, ax = plt.subplots()
+    ax.plot(xaxis,theoretical*100000,**{'color': 'lightsteelblue', 'marker': 'o'})
+    plt.hist(lifetime)
+    plt.show
+    lifetime_counts = Counter(lifetime)
+    observed_counts = np.array([lifetime_counts.get(t, 0) for t in range(1000)])
+    exp=theoretical*1000
+    exp_scaled = exp * (np.sum(observed_counts) / np.sum(exp))
+
+    # Optional: mask zeros to avoid divide-by-zero
+    mask = exp_scaled > 0
+    chi2, p = scipy.stats.chisquare(f_obs=observed_counts[mask], f_exp=exp_scaled[mask])
+
+    print(f"Chi-squared = {chi2:.2f}, p-value = {p:.4f}")
+#task_3(Probmatrix,patients,lifetime)
+
+#### TASK 4 #####
+accepted_lifetimes=[]
+total_lifetimes=1000
+def task_4sim(Probmatrix):
+    state=0
+    trajectory=[]
+    for t in range(1000):
+        trajectory.append(state)
+        if state==4:
+            break
+        state=np.random.choice(len(Probmatrix), p=Probmatrix[state])
+    return(trajectory)
+
+def task_4(Probmatrix):
+    while len(accepted_lifetimes) < total_lifetimes:
+        traj = task_4sim(Probmatrix)
+        lifetime = len(traj) - 1
+        if lifetime >= 12:
+            # Check if states 1, 2, or 3 occurred in the first 12 months
+            if any(s in [1, 2, 3] for s in traj[:12]):
+                accepted_lifetimes.append(lifetime)
+    plt.hist(accepted_lifetimes)
+    plt.show
+#task_4(Probmatrix)
+
+####TASK 5 ####
+def task_5_sim(Probmatrix,numpatients):
+    months=350
+    patients=np.zeros(numpatients,dtype=int)
+    lifetimes = np.zeros(numpatients, dtype=int)
+    for j in range(months):
+        for i in range(numpatients):
+            if patients[i] != 4:
+                lifetimes[i]+=1
+                x=patients[i]
+                patients[i]=np.random.choice(len(states), p=Probmatrix[x])
+            
+    return(patients,lifetimes)
+def task_5(Probmatrix):
+    numpatients=200
+    simnum=10
+    avglist=[]
+    mean_lifetimes = []
+    for m in range(simnum):
+        patients,lifetimes=task_5_sim(Probmatrix,numpatients)
+        avglist.append((np.count_nonzero(patients==4))/(simnum*numpatients))
+        mean_lifetimes.append(np.mean(lifetimes))
+    fracdead=(sum(avglist))
+    mean_lifetimes = np.array(mean_lifetimes)
+    ci = scipy.stats.t.interval(.95, df=len(avglist)-1, loc=np.mean(avglist), scale=np.std(avglist, ddof=1) / np.sqrt(len(avglist)))
+    
+    ##--Control Variate--##
+    cov=(avglist, mean_lifetimes)#[0,1]
+    var_z = np.var(mean_lifetimes, ddof=1)
+    c_opt = cov / var_z
+   # expected_mean_lifetime = np.array([1,0,0,0]) @ ()
+
+  #  adjusted_estimates = avglist - c_opt * (mean_lifetimes - expected_mean_lifetime)
+   ##adjusted_ci = scipy.stats.t.interval(0.95, df=len(adjusted_estimates)-1, loc=adjusted_mean,
+    #                                   scale=np.std(adjusted_estimates, ddof=1)/np.sqrt(len(adjusted_estimates)))
+
+    # ---- Variance Comparison ----
+    avglist=np.array(avglist)
+    crude_var = np.var(avglist, ddof=1)
+    #adjusted_var = np.var(adjusted_estimates, ddof=1)
+    #variance_reduction = 100 * (1 - adjusted_var / crude_var)
+    #print("Crude MC avg:", fracdead, ", with CI:", ci)
+    #print("CV avg:",adjusted_mean,"with CI:", adjusted_ci)
+    #print(f"Control variate-adjusted average: {adjusted_mean:.4f}, 95% CI: {adjusted_ci}")
+    #print(f"Variance reduction using control variate: {variance_reduction:.2f}%")
+    
+task_5(Probmatrix)
+    
