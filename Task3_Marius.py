@@ -74,9 +74,14 @@ anaLifeDistT = anaLifeDist.copy()
 anaLifeDistT[cutoff:] = 0
 anaLifeCountT = anaLifeDistT * n
 
+#Normalize expected frequencies to match observed total
+expected = anaLifeCountT[:cutoff - 1]
+expected *= simLifeDistT[:cutoff - 1].sum() / expected.sum()
+
+
 # Chi-square test (you can fix normalization here)
-# chisq_result = chisquare(simLifeDistT[:cutoff - 1], f_exp=anaLifeCountT[:cutoff - 1])
-# print("Chi-square test p-value:", chisq_result.pvalue)
+ chisq_result = chisquare(simLifeDistT[:cutoff - 1], f_exp=anaLifeCountT[:cutoff - 1])
+ print("Chi-square test p-value:", chisq_result.pvalue)
 
 # T-test
 ttest_result = ttest_1samp(simLifetimes, popmean=anaLifeMean)
