@@ -1,0 +1,143 @@
+
+import numpy as np
+
+# Set seed for reproducibility
+np.random.seed(1234)
+
+# Number of women to simulate
+n = 1000
+
+# Transition rate matrix Q
+Q = np.array([
+    [-0.0085, 0.0050, 0.0025, 0.0000, 0.0010],
+    [0.0000, -0.0140, 0.0050, 0.0040, 0.0050],
+    [0.0000, 0.0000, -0.0080, 0.0030, 0.0050],
+    [0.0000, 0.0000, 0.0000, -0.0090, 0.0090],
+    [0.0000, 0.0000, 0.0000, 0.0000, 0.0000]
+])
+
+# Time between observations (in months)
+obsDel = 48
+
+# Convergence criterion
+convCrit = 0.001
+
+# Function to simulate a single woman
+def sim1Woman():
+    # Create list to hold results: [time, state]
+    output = [[0, 1]]  # Initial state is 1, time is 0
+    currstate = 1
+    while currstate != 5:
+        # Sample the waiting time
+        wait = np.random.exponential(scale=-1/Q[currstate-1, currstate-1])
+        # Set the time of the next transition
+        time_next = output[-1][0] + wait
+        # Get the next state
+        stateProps = np.delete(Q[currstate-1], currstate-1)
+        statePropsN = stateProps / stateProps.sum()
+        nextstate = np.random.choice([s for s in range(1, 6) if s != currstate], p=statePropsN)
+        output.append([time_next, nextstate])
+        currstate = nextstate
+    return np.array(output)
+
+# Function to simulate n women, but only looking at observed states
+def simObsWomen():
+    output = []
+    for _ in range(n):
+        woman = sim1Woman()
+        ind = 1
+        currstate = 1
+        obs = [currstate]
+        # Repeatedly check the state every obsDel months, until death
+        while currstate != 5:
+            t = ind * obsDel
+            idx = np.where(woman[:, 0] < t)[0][-1]
+            currstate = int(woman[idx, 1])
+            obs.append(currstate)
+            ind += 1
+        output.append(obs)
+    return output
+
+# Simulate all women
+simWomen1000 = simObsWomen()
+
+# Generate a Q0 based on the observed data
+transCounts = np.zeros((5, 5))
+for i in simWomen1000:
+    for j in range(len(i) - 1):
+        if i[j] != i[j+1]:
+            transCounts[i[j]-1, i[j+1]-1] += 1
+
+# Convert counts to rates
+Q0 = np.zeros((5, 5))
+for i in range(5):
+    if transCounts[i].sum() > 0:
+        Q0[i] = transCounts[i] / (transCounts[i].sum() * obsDel)
+        Q0[i, i] = -Q0[i, np.arange(5) != i].sum()
+
+# Function to simulate path between 2 observations
+def simPath(stateInit, stateEnd, Q):
+    while True:
+        # Create matrix to hold results: 5 rows for transitions, 6th row for sojourn times
+        output = np.zeros((6, 5))
+        currstate = stateInit
+        while output[5].sum() < obsDel:
+            # Sample the wait time
+            if currstate != 5:
+                wait = np.random.exponential(scale=-1/Q[currstate-1, currstate-1])
+            else:
+                wait = obsDel
+            # If next jump overshoots the interval, adjust and break
+            if output[5].sum() + wait >= obsDel:
+                output[5, currstate-1] += obsDel - output[5].sum()
+                break
+            # Add wait time to sojourn time
+            output[5, currstate-1] += wait
+            # Get new state and increment the transition
+            stateProps = np.delete(Q[currstate-1], currstate-1)
+            statePropsN = stateProps / stateProps.sum()
+            newstate = np.random.choice([s for s in range(1, 6) if s != currstate], p=statePropsN)
+            output[currstate-1, newstate-1] += 1
+            currstate = newstate
+        # Path has been found, test if accepted
+        if currstate == stateEnd:
+            return output
+
+# Variable to hold the old Q
+Qold = Q0.copy()
+# Variable to hold the new Q
+Qnew = np.zeros((5, 5))
+
+# Loop until the simulation converges
+while True:
+    # Variable to hold the outputs
+    NSij = np.zeros((6, 5))
+    # Run the simulation over all women
+    for i in simWomen1000:
+        for j in range(len(i) - 1):
+            NSij += simPath(i[j], i[j+1], Qold)
+    # Calculate the new Q
+    for i in range(5):
+        for j in range(5):
+            if i != j:
+                Qnew[i, j] = NSij[i, j] / NSij[5, i] if NSij[5, i] > 0 else 0
+        Qnew[i, i] = -Qnew[i, np.arange(5) != i].sum()
+    # Calculate the convergence criterion
+    Qdiff = np.abs(Qnew - Qold)
+    Qconv = np.max(Qdiff.sum(axis=1))
+    print(f"New Q found! Conv is {Qconv}")
+    if Qconv < convCrit:
+        break
+    Qold = Qnew.copy()
+
+# The final estimated Q
+Qfinal = Qnew
+
+# Calculate the difference between Q and Qnew
+Qdiff = np.abs(Qfinal - Q)
+
+# Calculate the relative error
+Qe = np.divide(Qdiff, Q, out=np.zeros_like(Qdiff), where=Q != 0)
+
+print("Final estimated Q:\n", Qfinal)
+print("Relative error Qe:\n", Qe)
