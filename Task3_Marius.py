@@ -35,7 +35,7 @@ remaining = n
 # Loop while there still are living women
 while remaining > 0:
     tempRes = np.zeros(n, dtype=int)
-    i in range(n):
+    for i in range(n):
         if result[-1, i] != 5:
             tempRes[i] = new_State(result[-1, i])
             if tempRes[i] == 5:
