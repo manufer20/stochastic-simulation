@@ -159,4 +159,4 @@ simTra <- function(time, type){
 }
 
 #Run the simulation, argument is if Ward F is included (1) or not (0)
-simMain(1)
+simMain(0)
