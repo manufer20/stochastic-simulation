@@ -24,10 +24,10 @@ bed <- numeric(length = 6)
 Penalties <- numeric(length = 6)
 
 #Create Blocked, which holds the sim output of how many patients were blocked
-Blocked <- 0
+Blocked <- numeric(length = 6)
 
 #Create endTime, which sets the period of time to be simulated, in days
-endTime <- 10
+endTime <- 365
 #Given values
 bed <- c(55,40,30,20,20,0)
 ArrRate <- c(14.5,11,8,6.5,5,13)
@@ -45,6 +45,7 @@ relProbs <- matrix(c(0.00,0.05,0.10,0.05,0.80,0.00,
 simMain <- function(withF){
   #Run init function
   simInit(withF)
+  print("Init complete")
   #Repeat as long as there are more events, and the time haven't exceeded the end time
   while(nrow(eventList) > 0 && replace(eventList[1,1], is.na(eventList[1,1]), 0)<endTime){
     #Check the first event in list, run appropriate function
@@ -57,7 +58,7 @@ simMain <- function(withF){
     compeventList <<- rbind(compeventList,eventList[1,])
     #Remove event from list
     eventList <<- eventList[-1,]
-    
+    print(paste0("t = ",tempTim," out of ",endTime))
     switch (as.character(tempEve),
       "Arr" = {
         #Run Arrival function
@@ -74,8 +75,8 @@ simMain <- function(withF){
     )
     
   }
-  print(paste0("Penalty ward ",LETTERS[1:6],": ", Penalties))
-  print(paste0("Total patients blocked: ", Blocked, " Total Penalty: ", sum(Penalties)))
+  print(paste0("Patient type ",LETTERS[1:6],": Penalties: ", Penalties, ", Patients blocked: ", Blocked))
+  print(paste0("Total patients blocked: ", sum(Blocked)," out of ",sum(compeventList$e_type=="Arr"), " total patients. Total Penalty: ", sum(Penalties)))
 }
 
 #Function to add event to eventList
@@ -153,9 +154,9 @@ simTra <- function(time, type){
     simAddEvent(time + LoS, "Dep", Dest)
     bed[which(LETTERS==Dest)] <<- bed[which(LETTERS==Dest)] - 1
   } else {
-    Blocked <<- Blocked + 1
+    Blocked[which(LETTERS==type)] <<- Blocked[which(LETTERS==Dest)] + 1
   }
 }
 
-#Run the simulation
-simMain(0)
+#Run the simulation, argument is if Ward F is included (1) or not (0)
+simMain(1)
