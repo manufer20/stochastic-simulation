@@ -1,11 +1,18 @@
-set.seed(0)
+#Import the reticulate library, allowing to set seed, and be reproducible with Python
+library(reticulate)
+np <- import("numpy")
+
+# Create a Generator with MT19937
+bitgen <- np$random$MT19937(seed = 0L)
+rng <- np$random$Generator(bitgen)
 
 #Create eventList, which holds all of the unhandled events
 eventList <- data.frame(e_time = numeric(),
                         e_type = factor(levels = c("Dep", "Tra", "Arr")),
                         p_type = character(),
                         stringsAsFactors = F)
-oldeventList <- data.frame(e_time = numeric(),
+#Create compeventList, which holds all of the handled events
+compeventList <- data.frame(e_time = numeric(),
                            e_type = factor(levels = c("Dep", "Tra", "Arr")),
                            p_type = character(),
                            stringsAsFactors = F)
@@ -46,8 +53,8 @@ simMain <- function(withF){
     tempTim <- eventList[1,1]
     tempEve <- eventList[1,2]
     tempTyp <- eventList[1,3]
-    #Add event to oldlist
-    oldeventList <<- rbind(oldeventList,eventList[1,])
+    #Add event to complist
+    compeventList <<- rbind(compeventList,eventList[1,])
     #Remove event from list
     eventList <<- eventList[-1,]
     
@@ -85,6 +92,7 @@ simAddEvent <- function(e_time, e_type, p_type){
   eventList <<- eventList[order(eventList$e_time, eventList$e_type), ]
 }
 
+#Function to initialize simulation
 simInit <- function(withF){
   #Create list to hold inter arrival times
   IAT <- vector(mode = "list", length = 6)
@@ -94,7 +102,8 @@ simInit <- function(withF){
   for (i in 1:(5+withF)){
     while(sum(IAT[[i]]) < endTime){
       #Generate inter arrival times for a years worth of patients
-      IAT[[i]][length(IAT[[i]])+1] <- rexp(1,rate = ArrRate[i])
+      #IAT[[i]][length(IAT[[i]])+1] <- rexp(1,rate = ArrRate[i])
+      IAT[[i]][length(IAT[[i]])+1] <- rng$exponential(scale = 1/ArrRate[i], size = 1L)
     }
     #Convert to actual arrival times
     ArrT[[i]] <- cumsum(IAT[[i]])
@@ -107,17 +116,25 @@ simInit <- function(withF){
 
 #Function to handle arrivals
 simArr <- function(time, type){
+  #Check if the ward the patient arrived at has any available beds
   if(bed[which(LETTERS==type)] > 0) {
-    LoS <- rexp(1,rate = 1/μLoS[which(LETTERS==type)])
+    #If bed is available, generate the length of stay for that patient
+    #LoS <- rexp(1,rate = 1/μLoS[which(LETTERS==type)])
+    LoS <- rng$exponential(scale = μLoS[which(LETTERS==type)], size = 1L)
+    #Add a departure event to event list
     simAddEvent(time+LoS,"Dep",type)
+    #Patient is now using a bed, so decrement the amount of beds in that ward
     bed[which(LETTERS==type)] <<- bed[which(LETTERS==type)] - 1
   } else {
+    #If no bed is available, add a transfer event at the same time
     simAddEvent(time, "Tra", type)
   }
 }
 
 #Function to handle departures
 simDep <- function(time, type){
+  #Patient has departed, so the bed is now free. 
+  #Increment the amount of beds in that ward
   bed[which(LETTERS==type)] <- bed[which(LETTERS==type)] + 1
 }
 
@@ -126,9 +143,11 @@ simTra <- function(time, type){
   #Add penalty
   Penalties[which(LETTERS==type)] <<- Penalties[which(LETTERS==type)] + urgency[which(LETTERS==type)]
   #Sample length of stay of patient
-  LoS <- rexp(1,rate = 1/μLoS[which(LETTERS==type)])
+  #LoS <- rexp(1,rate = 1/μLoS[which(LETTERS==type)])
+  LoS <- rng$exponential(scale = μLoS[which(LETTERS==type)], size = 1L)
   #Sample transfer destination
-  Dest <- sample(LETTERS[1:6],size = 1,prob = relProbs[which(LETTERS==type),])
+  #Dest <- sample(LETTERS[1:6],size = 1,prob = relProbs[which(LETTERS==type),])
+  Dest <- as.character(rng$choice(a = LETTERS[1:6], size = 1L, p = relProbs[which(LETTERS==type),]))
   #Check availability of dest
   if(bed[which(LETTERS==Dest)] > 0) {
     simAddEvent(time + LoS, "Dep", Dest)
@@ -138,4 +157,5 @@ simTra <- function(time, type){
   }
 }
 
+#Run the simulation
 simMain(0)
