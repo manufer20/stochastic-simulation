@@ -154,7 +154,7 @@ simTra <- function(time, type){
     simAddEvent(time + LoS, "Dep", Dest)
     bed[which(LETTERS==Dest)] <<- bed[which(LETTERS==Dest)] - 1
   } else {
-    Blocked[which(LETTERS==type)] <<- Blocked[which(LETTERS==Dest)] + 1
+    Blocked[which(LETTERS==type)] <<- Blocked[which(LETTERS==type)] + 1
   }
 }
 
