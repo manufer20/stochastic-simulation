@@ -136,7 +136,7 @@ simArr <- function(time, type){
 simDep <- function(time, type){
   #Patient has departed, so the bed is now free. 
   #Increment the amount of beds in that ward
-  bed[which(LETTERS==type)] <- bed[which(LETTERS==type)] + 1
+  bed[which(LETTERS==type)] <<- bed[which(LETTERS==type)] + 1
 }
 
 #Function to handle transfers
