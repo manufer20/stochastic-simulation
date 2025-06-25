@@ -90,7 +90,7 @@ def ward_sim(n, burn_in, capacity, lambdas, mus, P):
         "relocated": relocated,
         "lost": lost
     }
-def simulate_burnin_occupancy(n=3000, burn_in=1000, capacity=None, lambda_rates=None, mu_rates=None, P=None, track_time=50):
+def simulate_burnin_occupancy(n=3000, burn_in=1000, capacity=None, lambda_rates=None, mu_rates=None, P=None, track_time=100):
     """
     Simulates hospital ward occupancy over time to determine burn-in period.
     Returns occupancy time series for each ward.
@@ -150,7 +150,7 @@ def simulate_burnin_occupancy(n=3000, burn_in=1000, capacity=None, lambda_rates=
     return occupancy_time_series, capacity
 
 # Run the simulation
-#occupancy_time_series, capacity = simulate_burnin_occupancy()
+occupancy_time_series, capacity = simulate_burnin_occupancy()
 def plot_ward_occupancy(occupancy_time_series):
     wards = ['A', 'B', 'C', 'D', 'E', 'F']
     plt.figure(figsize=(12, 6))
@@ -163,7 +163,7 @@ def plot_ward_occupancy(occupancy_time_series):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
-#plot_ward_occupancy(occupancy_time_series)
+plot_ward_occupancy(occupancy_time_series)
 
 INCLUDE_F = True  # Set to True to include Ward F
 WARDS = ['A', 'B', 'C', 'D', 'E'] + (['F'] if INCLUDE_F else [])
@@ -280,18 +280,18 @@ def simulate_hospital_flow(days=395, burnin=30, bed_config=None):
     total_penalty = sum(penalties.values())
 
     # Output results
-    #print("\n--- Simulation Results ---")
-    #for w in WARDS:
-    #    print(f"Ward {w}")
-    #    print(f"  N: patients   = {patients_total[w]}")
-    #    print(f"  N: directly admitted   = {patients_admitted[w]}")
-    #    print(f"  N: relocated  = {patients_relocated[w]}")
-    #    print(f"  N: lost       = {patients_lost[w]}")
-    #    print(f"  Penalty       = {penalties[w]}")
-    #    print(f"  Fraction Directly Admitted        = {fraction_direct[w]:.4f}")
-    #    print(f"  Probability Beds Full on Arrival  = {prob_full[w]:.4f}")
-    #print(f"\nTotal blocked patients: {blocked}")
-    ##print(f"\nTotal penalty points: {total_penalty}")
+    print("\n--- Simulation Results ---")
+    for w in WARDS:
+        print(f"Ward {w}")
+        print(f"  N: patients   = {patients_total[w]}")
+        print(f"  N: directly admitted   = {patients_admitted[w]}")
+        print(f"  N: relocated  = {patients_relocated[w]}")
+        print(f"  N: lost       = {patients_lost[w]}")
+        print(f"  Penalty       = {penalties[w]}")
+        print(f"  Fraction Directly Admitted        = {fraction_direct[w]:.4f}")
+        print(f"  Probability Beds Full on Arrival  = {prob_full[w]:.4f}")
+    print(f"\nTotal blocked patients: {blocked}")
+    print(f"\nTotal penalty points: {total_penalty}")
     return (
     patients_total,
     patients_admitted,
@@ -304,7 +304,7 @@ def simulate_hospital_flow(days=395, burnin=30, bed_config=None):
 )
 
 # ▶ Run it
-#simulate_hospital_flow()
+simulate_hospital_flow()
 
 def run_multiple_simulations(n=1, bed_config=None):
     totals = {w: 0 for w in WARDS}
@@ -468,7 +468,7 @@ def plot_multiple_sim(pt, pa, pr, pl, pen, *_):
     plot_patient_flow(pt, pa, pr, pl)
     plot_penalties(pen)
     plot_outcome_percentages(pt, pa, pr, pl)
-#plot_multiple_sim(pt, pa, pr, pl, pen, *_)
+plot_multiple_sim(pt, pa, pr, pl, pen, *_)
 
 class HospitalModel:
     """Represents the hospital's rules, state, and statistics for a single simulation run."""
