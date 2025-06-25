@@ -30,7 +30,20 @@ relocation_probs = {
     'E': {'A': 0.20, 'B': 0.10, 'C': 0.60, 'D': 0.10},
     'F': {'A': 0.20, 'B': 0.20, 'C': 0.20, 'D': 0.20, 'E': 0.20}
 }
+BED_FRACTIONS = {'A': 0.34, 'B': 0.25, 'C': 0.18, 'D': 0.12, 'E': 0.12}
+BED_SCENARIOS = {
+    # Baseline – current 165‑bed allocation (55,40,30,20,20)
+    "baseline": {'A': 55, 'B': 40, 'C': 30, 'D': 20, 'E': 20},
 
+    # Move beds from D & E to A (“A↑”)
+    "A↑":       {'A': 70, 'B': 34, 'C': 25, 'D': 18, 'E': 18},
+
+    # Even split expressed *as fractions* (will be multiplied by total_beds)
+    "even":     {'A': 0.20, 'B': 0.20, 'C': 0.20, 'D': 0.20, 'E': 0.20},
+
+    # Boost C at the expense of D (“C↑ D↓”)
+    "C↑ D↓":    {'A': 55, 'B': 40, 'C': 40, 'D': 10, 'E': 20},
+}
 def ward_sim(n, burn_in, capacity, lambdas, mus, P):
     m = len(capacity)  # Number of wards / patient types
 
@@ -306,7 +319,7 @@ def simulate_hospital_flow(days=395, burnin=30, bed_config=None):
 # ▶ Run it
 simulate_hospital_flow()
 
-def run_multiple_simulations(n=1, bed_config=None):
+def run_multiple_simulations(n=50, bed_config=None):
     totals = {w: 0 for w in WARDS}
     admitted = {w: 0 for w in WARDS}
     relocated = {w: 0 for w in WARDS}
@@ -372,7 +385,7 @@ def run_multiple_simulations(n=1, bed_config=None):
         avg_total_blocked,
         avg_total_penalties
     )
-#run_multiple_simulations(1)
+#run_multiple_simulations(50)
 def plot_penalties(penalties):
     wards = list(penalties.keys())
     scores = [penalties[w] for w in wards]
@@ -445,21 +458,10 @@ def plot_patient_flow(patients_total, patients_admitted, patients_relocated, pat
     plt.tight_layout()
     plt.show()
 
-# --- Bar Plot: Penalty Scores per Ward ---
-def plot_penalties(penalties):
-    wards = list(penalties.keys())
-    scores = [penalties[w] for w in wards]
 
-    plt.figure(figsize=(10, 5))
-    plt.bar(wards, scores, color='salmon')
-    plt.ylabel('Penalty Score')
-    plt.title('Penalty Score per Ward')
-    plt.grid(axis='y')
-    plt.tight_layout()
-    plt.show()
 
 # Run the simulation 
-pt, pa, pr, pl, pen, *_ = run_multiple_simulations(1)
+pt, pa, pr, pl, pen, *_ = run_multiple_simulations(50)
 
 
 #Plot the results
@@ -533,7 +535,7 @@ class HospitalModel:
         if self.occupied_beds[ward_of_admission] > 0:
             self.occupied_beds[ward_of_admission] -= 1
 
-def simulate_hospital_flow(bed_config, duration=365, burn_in=50):
+def simulate_hospital_flow_short(bed_config, duration=365, burn_in=50):
     """
     This is the main simulation function. It takes a bed layout and returns
     the key performance metrics needed by the optimizer.
@@ -595,12 +597,12 @@ def objective_function(bed_config):
     This is the function the optimizer tries to minimize.
     It returns a single "cost" value for a given bed layout.
     """
-    f_admission_rate, penalty_score = simulate_hospital_flow(bed_config=bed_config)
+    f_admission_rate, penalty_score = simulate_hospital_flow_short(bed_config=bed_config)
     
     # Add a massive penalty if the Ward F admission constraint is violated.
     # This forces the optimizer to find solutions that are valid.
     if f_admission_rate < 0.95:
-        penalty_score += 1000
+        penalty_score += 3000
 
     return penalty_score
 
@@ -655,7 +657,7 @@ def simulated_annealing_optimizer(initial_config, src_weights, max_iter=2000):
         delta = cost - current_cost
         
         # Metropolis acceptance criterion
-        if delta < 0 or random.random() < np.exp(-delta / T):
+        if delta < 0 or rng.random() < np.exp(-delta / T):
             current_config = neighbor_config
             current_cost = cost
         
@@ -715,6 +717,239 @@ print(f"Time Taken for optimization: {end_time - start_time:.2f} seconds")
 
 # --- Final verification run with the best configuration ---
 print("\n--- Verifying performance of best configuration ---")
-f_admission_rate, penalty_score = simulate_hospital_flow( duration=365, burn_in=50, bed_config=best_config,)
+f_admission_rate, penalty_score = simulate_hospital_flow_short( duration=365, burn_in=50, bed_config=best_config,)
 print(f"  Verification Run - Final Penalty Score: {penalty_score:.2f}")
 print(f"  Verification Run - Ward F Admission Rate: {f_admission_rate:.2%}")
+
+
+
+
+########-----------SENSITIVITY------------------################
+# === Sensitivity toggles =================================================
+CURRENT_DIST = "exp"    # "exp"  or "lognormal"
+VAR_MULT     = 1.0      # if lognormal: 2/µ², 3/µ², 4/µ² → set 2,3,4 here
+# ========================================================================
+
+# ------------------------------------------------------------------
+# Helper: draw a single length‑of‑stay for *one* patient
+# ------------------------------------------------------------------
+def sample_los(ptype, distribution="exp", var_mult=1.0):
+    """
+    Parameters
+    ----------
+    ptype        : ward / patient type, e.g. 'A'
+    distribution : "exp" (baseline) or "lognormal"
+    var_mult     : for log‑normal, factor k so that  Var = k / µ_i²  (k ≥ 1)
+
+    Returns
+    -------
+    los : float  (length‑of‑stay in days)
+    """
+    μ = stay_means[ptype]  # target mean
+
+    if distribution == "exp":
+        return rng.exponential(μ)
+
+    # --- log‑normal with same mean, inflated variance ---------------
+    # We want   E[X] = μ,   Var[X] = k / μ²         (k = var_mult)
+    σ2 = var_mult / μ**2            # target variance
+    # For a log‑normal  X ~ LN( m, s² ):
+    #   mean = exp(m + s²/2)
+    #   var  = (exp(s²) - 1) * exp(2m + s²)
+    # Solve for m, s²:
+    s2 = np.log(σ2 / μ**2 + 1)
+    m  = np.log(μ) - 0.5 * s2
+    return rng.lognormal(mean=m, sigma=np.sqrt(s2))
+
+
+urgency_points = {'A': 7, 'B': 5, 'C': 2, 'D': 10, 'E': 5, 'F': 0}
+initial_beds = {'A': 55, 'B': 40, 'C': 30, 'D': 20, 'E': 20, 'F': 0}
+def run_sensitivity(var_factors=(2.0, 3.0, 4.0), reps=30):
+    global CURRENT_DIST, VAR_MULT
+
+    scenario_penalties = {}      # raw totals per scenario label
+    mean_results       = []      # (label, mean‑of‑totals) for bar plot
+
+    # ---------- lognormal scenarios ----------
+    for k in var_factors:
+        CURRENT_DIST, VAR_MULT = "lognormal", k
+        raw_totals = []                         # store 1 total per replication
+
+        for _ in range(reps):
+            _, _, _, _, pen, _,_,_ = simulate_hospital_flow(bed_config=best_config)
+            raw_totals.append(sum(pen.values()))
+
+        scenario_penalties[str(k)] = raw_totals
+        mean_results.append((str(k), np.mean(raw_totals)))
+
+    # ---------- baseline exponential ----------
+    CURRENT_DIST, VAR_MULT = "exp", 1.0
+    raw_totals = []
+    for _ in range(reps):
+        _, _, _, _, pen, _,_,_ = simulate_hospital_flow(bed_config=best_config)
+        raw_totals.append(sum(pen.values()))
+
+    scenario_penalties["exp"] = raw_totals
+    mean_results.insert(0, ("exp", np.mean(raw_totals)))
+
+    # ---------- numerical table ----------
+    print(f"\n--- Sensitivity results over {reps} replications ---")
+    print("Scenario   mean      var        95 % CI")
+    for label, samples in scenario_penalties.items():
+        arr  = np.asarray(samples, dtype=float)
+        mean = arr.mean()
+        var  = arr.var(ddof=1)
+        se   = arr.std(ddof=1) / np.sqrt(reps)
+        ci_lo, ci_hi = mean - 1.96*se, mean + 1.96*se
+        print(f"{label:>7}  {mean:9.1f}  {var:9.1f}   [{ci_lo:,.1f}, {ci_hi:,.1f}]")
+
+    # ---------- bar plot of means ----------
+    labels, means = zip(*mean_results)
+    plt.figure(figsize=(8,4))
+    plt.bar(labels, means, color="steelblue")
+    plt.ylabel("Average total penalty")
+    plt.xlabel("LOS distribution (variance factor)")
+    plt.title(f"Sensitivity analysis  –  {reps} replications per scenario")
+    plt.tight_layout(); plt.show()
+
+    # ---------- histograms ----------
+    ncol = 2
+    nrow = int(np.ceil(len(scenario_penalties)/ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(10, 3*nrow))
+    axes = axes.ravel()
+
+    for ax, (label, samples) in zip(axes, scenario_penalties.items()):
+        ax.hist(samples, bins=10, color="gray", edgecolor="black")
+        ax.set_title(f"LOS {label}")
+        ax.set_xlabel("Total penalty"); ax.set_ylabel("freq")
+
+    # blank any unused subplot panels
+    for ax in axes[len(scenario_penalties):]:
+        ax.axis("off")
+    plt.tight_layout(); plt.show()
+
+    # reset globals for interactive runs
+    CURRENT_DIST, VAR_MULT = "exp", 1.0
+
+
+
+# ------------------------------------------------------------------
+#  Capacity–sensitivity: vary TOTAL beds, keep same fractional split
+# ------------------------------------------------------------------
+def run_capacity_sensitivity(totals=(140, 150, 170, 180), reps=30):
+    """Assess average penalty when total bed stock changes."""
+    scenario_penalties, mean_results = {}, []
+
+    for tot in totals:
+        new_beds = {w: round(tot * BED_FRACTIONS[w]) for w in BED_FRACTIONS}
+        raw_totals = []
+        for _ in range(reps):
+            _, _, _, _, pen, _,_,_ = simulate_hospital_flow(bed_config=best_config)
+            raw_totals.append(sum(pen.values()))
+
+        scenario_penalties[str(tot)] = raw_totals
+        mean_results.append((tot, np.mean(raw_totals)))
+
+    # --- numeric table ---
+    print(f"\n--- Capacity sensitivity ({reps} reps) ---")
+    print("Beds   mean      var        95 % CI")
+    for tot, mean in mean_results:
+        arr = np.asarray(scenario_penalties[str(tot)])
+        var = arr.var(ddof=1)
+        se  = arr.std(ddof=1) / np.sqrt(reps)
+        lo, hi = mean - 1.96*se, mean + 1.96*se
+        print(f"{tot:>4}  {mean:9.1f}  {var:9.1f}   [{lo:,.1f}, {hi:,.1f}]")
+
+    # --- bar chart of means ---
+    beds, means = zip(*mean_results)
+    plt.figure(figsize=(7,4))
+    plt.bar([str(b) for b in beds], means, color="teal")
+    plt.ylabel("Average total penalty")
+    plt.xlabel("Total bed stock")
+    plt.title(f"Penalty vs capacity – {reps} replications")
+    plt.tight_layout(); plt.show()
+
+    # --- histograms ---
+    ncol = 2
+    nrow = int(np.ceil(len(beds)/ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(10, 3*nrow))
+    axes = axes.ravel()
+    for ax, tot in zip(axes, beds):
+        ax.hist(scenario_penalties[str(tot)], bins=10, color="gray",
+                edgecolor="black")
+        ax.set_title(f"{tot} beds")
+        ax.set_xlabel("Total penalty"); ax.set_ylabel("freq")
+    for ax in axes[len(beds):]:
+        ax.axis("off")
+    plt.tight_layout(); plt.show()
+
+# ------------------------------------------------------------------
+#  Bed-split sensitivity – vary FRACTIONAL allocation
+# ------------------------------------------------------------------
+def run_split_sensitivity(scenarios, reps=30, total_beds=165):
+    """scenarios: dict name → {ward: fraction OR absolute}"""
+    results = {}
+
+    for label, frac in scenarios.items():
+        # If the entry is fractional, convert to absolute bed counts
+        if abs(sum(frac.values()) - 1.0) < 1e-6:          # looks like fractions
+            beds = {w: round(frac[w]*total_beds) for w in WARDS[:5]}
+        else:                                             # already absolute
+            beds = frac.copy()
+
+        totals = []
+        for _ in range(reps):
+            _, _, _, _, pen, _,_,_ = simulate_hospital_flow(bed_config=best_config)
+            totals.append(sum(pen.values()))
+        results[label] = np.asarray(totals)
+
+    # ---------- numeric summary ----------
+    print(f"\n--- Split-sensitivity with {reps} replications ---")
+    print("Scenario   mean      var        95 % CI")
+    for label, arr in results.items():
+        mu, var = arr.mean(), arr.var(ddof=1)
+        se      = arr.std(ddof=1) / np.sqrt(reps)
+        lo, hi  = mu - 1.96*se, mu + 1.96*se
+        print(f"{label:>8}  {mu:9.1f}  {var:9.1f}   [{lo:,.1f}, {hi:,.1f}]")
+
+    # ---------- bar-chart of means ----------
+    labels = list(results.keys())
+    means  = [results[l].mean() for l in labels]
+    plt.figure(figsize=(8,4))
+    plt.bar(labels, means, color="slateblue")
+    plt.ylabel("Average total penalty")
+    plt.xlabel("Bed-split scenario")
+    plt.title(f"Penalty vs bed distribution  –  {reps} reps, {total_beds} beds total")
+    plt.tight_layout(); plt.show()
+
+    # ---------- histograms (optional) ----------
+    ncol = 2
+    nrow = int(np.ceil(len(labels)/ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(10, 3*nrow))
+    axes = axes.ravel()
+    for ax, label in zip(axes, labels):
+        ax.hist(results[label], bins=10, color="grey", edgecolor="black")
+        ax.set_title(label)
+        ax.set_xlabel("Total penalty"); ax.set_ylabel("freq")
+    for ax in axes[len(labels):]:
+        ax.axis("off")
+    plt.tight_layout(); plt.show()
+
+# if __name__ == "__main__":
+#     # ① LOS‑variance sensitivity
+#     run_sensitivity()
+#     # ② Capacity‑change sensitivity
+#     run_capacity_sensitivity()
+
+if __name__ == "__main__":
+    # ① LOS-variance sensitivity (already there)
+    run_sensitivity()
+    # ② Capacity-change sensitivity (already there)
+    run_capacity_sensitivity()
+    # ③ Bed-split sensitivity
+    run_split_sensitivity(BED_SCENARIOS, reps=30, total_beds=165)
+
+plot_pie_total_patients(pt)
+plot_patient_flow(pt, pa, pr, pl)
+plot_penalties(pen)
+plot_outcome_percentages(pt, pa, pr, pl)
